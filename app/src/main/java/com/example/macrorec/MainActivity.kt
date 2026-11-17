@@ -1,58 +1,113 @@
 package com.example.macrorec
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
-import android.widget.Button
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import rikka.shizuku.Shizuku
+import android.widget.Toast
 
 class MainActivity : Activity() {
+    private lateinit var startBtn: TextView
     private lateinit var status: TextView
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private fun pill(color: Int) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(40).toFloat()
+    }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        actionBar?.hide()
+        window.statusBarColor = 0xFF2B3350.toInt()
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 60, 40, 40)
-            layoutDirection = LinearLayout.LAYOUT_DIRECTION_RTL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(0xFF36405F.toInt())
+            setPadding(dp(28), dp(48), dp(28), dp(28))
         }
-        status = TextView(this).apply { textSize = 16f; setPadding(0, 0, 0, 30) }
+
+        val title = TextView(this).apply {
+            text = "Macro Recorder"; textSize = 28f; setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+        }
+        status = TextView(this).apply {
+            textSize = 14f; setTextColor(0xFFC9CFE6.toInt()); gravity = Gravity.CENTER
+            setPadding(0, dp(12), 0, 0)
+        }
+        val spacer = View(this)
+
+        startBtn = TextView(this).apply {
+            textSize = 18f; setTextColor(0xFF3B3B3B.toInt()); typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER; background = pill(0xFFF9E076.toInt())
+            setOnClickListener { onStartClick() }
+        }
+
+        val help = TextView(this).apply {
+            text = "كيف أستخدمه؟"; textSize = 14f; setTextColor(0xFF333333.toInt())
+            gravity = Gravity.CENTER; background = pill(0xFFEDEDF2.toInt())
+            setOnClickListener { showHelp() }
+        }
+        val acc = TextView(this).apply {
+            text = "إمكانية الوصول"; textSize = 14f; setTextColor(0xFF333333.toInt())
+            gravity = Gravity.CENTER; background = pill(0xFFEDEDF2.toInt())
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(help, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(8) })
+            addView(acc, LinearLayout.LayoutParams(0, dp(46), 1f))
+        }
+
+        root.addView(title)
         root.addView(status)
-        fun add(t: String, f: () -> Unit) = root.addView(Button(this).apply {
-            text = t; setOnClickListener { f() }
-        })
-        add("1) افتح Shizuku (أو حمّله)") {
-            val i = packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
-            startActivity(i ?: Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=moe.shizuku.privileged.api")))
-        }
-        add("2) امنح هذا التطبيق صلاحية Shizuku") {
-            try { if (Shizuku.pingBinder()) Shizuku.requestPermission(1) } catch (_: Throwable) {}
-        }
-        add("3) فعّل خدمة إمكانية الوصول") {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
-        add("تحديث الحالة") { refresh() }
+        root.addView(spacer, LinearLayout.LayoutParams(1, 0, 1f))
+        root.addView(startBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64)).apply { bottomMargin = dp(16) })
+        root.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(24) })
         setContentView(root)
     }
 
     override fun onResume() { super.onResume(); refresh() }
 
-    private fun refresh() {
-        val running = try { Shizuku.pingBinder() } catch (_: Throwable) { false }
-        val granted = running && try {
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        } catch (_: Throwable) { false }
-        val acc = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            ?.contains(packageName) == true
-        status.text = "Shizuku يعمل: ${if (running) "✅" else "❌"}\n" +
-            "صلاحية Shizuku: ${if (granted) "✅" else "❌"}\n" +
-            "خدمة إمكانية الوصول: ${if (acc) "✅" else "❌"}\n\n" +
-            "لما تصير الثلاثة ✅ تظهر القائمة العائمة فوق أي لعبة."
+    private fun onStartClick() {
+        val s = MacroService.instance
+        if (s == null) {
+            Toast.makeText(this, "فعّل خدمة Macro Recorder من إمكانية الوصول ثم ارجع واضغط START", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } else if (s.isBarShown()) {
+            s.hideBar(); refresh()
+        } else {
+            s.showBar(); refresh(); moveTaskToBack(true)
+        }
     }
-}
+
+    private fun refresh() {
+        val s = MacroService.instance
+        status.text = if (s == null) "الخدمة غير مفعّلة ❌" else "الخدمة مفعّلة ✅"
+        startBtn.text = if (s != null && s.isBarShown()) "STOP SERVICE" else "START SERVICE"
+    }
+
+    private fun showHelp() {
+        AlertDialog.Builder(this)
+            .setTitle("طريقة الاستخدام")
+            .setMessage(
+                "1) اضغط START SERVICE وتظهر قائمة عائمة تقدر تسحبها لأي مكان.\n\n" +
+                "2) افتح اللعبة واضغط ⏺ وسوّ حركاتك بإصبع واحد. اللعبة تستجيب بعد ما ترفع إصبعك.\n\n" +
+                "3) اضغط ⏹ لإنهاء التسجيل. ↶ يحذف آخر حركة، و ⏸ يوقف التسجيل مؤقتًا وتلعب بحرية.\n\n" +
+                "4) من ⚙ حدد عدد التكرار (∞ بلا نهاية) والفاصل بين الدورات.\n\n" +
+                "5) اضغط ▶ للتشغيل، وتشوف الوقت وعدد الدورات.\n\n" +
+                "» تصغّر القائمة، و ✕ تغلقها."
+            )
+            .setPositiveButton("تمام", null)
+            .show()
+    }
+} 
