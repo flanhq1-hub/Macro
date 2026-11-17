@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Macro Recorder</string>
+    <string name="service_desc">يعيد حركات اللمس المسجلة على الشاشة</string>
+</resources>
