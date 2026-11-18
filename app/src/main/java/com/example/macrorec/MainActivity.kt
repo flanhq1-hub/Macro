@@ -3,9 +3,11 @@ package com.example.macrorec
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
@@ -13,6 +15,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import rikka.shizuku.Shizuku
 
 class MainActivity : Activity() {
     private lateinit var startBtn: TextView
@@ -52,6 +55,12 @@ class MainActivity : Activity() {
             setOnClickListener { onStartClick() }
         }
 
+        val shz = TextView(this).apply {
+            text = "⚡ تفعيل التسجيل الفوري (Shizuku)"; textSize = 14f
+            setTextColor(0xFF333333.toInt()); gravity = Gravity.CENTER
+            background = pill(0xFFBFE3FF.toInt())
+            setOnClickListener { shizukuStep() }
+        }
         val help = TextView(this).apply {
             text = "كيف أستخدمه؟"; textSize = 14f; setTextColor(0xFF333333.toInt())
             gravity = Gravity.CENTER; background = pill(0xFFEDEDF2.toInt())
@@ -71,12 +80,18 @@ class MainActivity : Activity() {
         root.addView(title)
         root.addView(status)
         root.addView(spacer, LinearLayout.LayoutParams(1, 0, 1f))
-        root.addView(startBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64)).apply { bottomMargin = dp(16) })
+        root.addView(startBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64)).apply { bottomMargin = dp(12) })
+        root.addView(shz, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply { bottomMargin = dp(12) })
         root.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(24) })
         setContentView(root)
     }
 
     override fun onResume() { super.onResume(); refresh() }
+
+    private fun shizukuRunning() = try { Shizuku.pingBinder() } catch (_: Throwable) { false }
+    private fun shizukuGranted() = shizukuRunning() && try {
+        Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+    } catch (_: Throwable) { false }
 
     private fun onStartClick() {
         val s = MacroService.instance
@@ -90,9 +105,28 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun shizukuStep() {
+        if (!shizukuRunning()) {
+            val i = packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+            startActivity(i ?: Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=moe.shizuku.privileged.api")))
+            Toast.makeText(this, "شغّل Shizuku أولًا ثم ارجع هنا واضغط الزر مرة ثانية", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!shizukuGranted()) {
+            try { Shizuku.requestPermission(1) } catch (_: Throwable) {}
+            return
+        }
+        Toast.makeText(this, "Shizuku جاهز ✅ فعّل الوضع الفوري من ⚙ في القائمة العائمة", Toast.LENGTH_LONG).show()
+    }
+
     private fun refresh() {
         val s = MacroService.instance
-        status.text = if (s == null) "الخدمة غير مفعّلة ❌" else "الخدمة مفعّلة ✅"
+        val shz = when {
+            shizukuGranted() -> "جاهز ✅"
+            shizukuRunning() -> "يعمل لكن بدون صلاحية ⚠"
+            else -> "غير شغّال (اختياري)"
+        }
+        status.text = (if (s == null) "الخدمة غير مفعّلة ❌" else "الخدمة مفعّلة ✅") + "\nShizuku: " + shz
         startBtn.text = if (s != null && s.isBarShown()) "STOP SERVICE" else "START SERVICE"
     }
 
@@ -100,14 +134,15 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("طريقة الاستخدام")
             .setMessage(
-                "1) اضغط START SERVICE وتظهر قائمة عائمة تقدر تسحبها لأي مكان.\n\n" +
-                "2) افتح اللعبة واضغط ⏺ وسوّ حركاتك بإصبع واحد. اللعبة تستجيب بعد ما ترفع إصبعك.\n\n" +
-                "3) اضغط ⏹ لإنهاء التسجيل. ↶ يحذف آخر حركة، و ⏸ يوقف التسجيل مؤقتًا وتلعب بحرية.\n\n" +
-                "4) من ⚙ حدد عدد التكرار (∞ بلا نهاية) والفاصل بين الدورات.\n\n" +
-                "5) اضغط ▶ للتشغيل، وتشوف الوقت وعدد الدورات.\n\n" +
+                "1) اضغط START SERVICE وتظهر قائمة عائمة تسحبها لأي مكان.\n\n" +
+                "2) اضغط ⏺ وسوّ حركاتك، ثم ⏹ لإنهاء التسجيل. ↶ يحذف آخر حركة، و ⏸ يوقف التسجيل مؤقتًا.\n\n" +
+                "3) من ⚙: التكرار (∞ بلا نهاية)، الفاصل بين الدورات، والوضع.\n\n" +
+                "الوضع «طبقة شفافة»: بدون Shizuku، واللعبة تتحرك بعد ما ترفع إصبعك.\n" +
+                "الوضع «⚡ فوري»: تلعب طبيعي واللعبة تستجيب معك، ويحتاج Shizuku شغّال.\n\n" +
+                "4) اضغط ▶ للتشغيل وتشوف الوقت وعدد الدورات.\n\n" +
                 "» تصغّر القائمة، و ✕ تغلقها."
             )
             .setPositiveButton("تمام", null)
             .show()
     }
-} 
+}
